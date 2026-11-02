@@ -83,6 +83,9 @@ jobs:
       - name: Lint check
         run: npx biome lint
 
+      - name: Unit tests
+        run: npm test
+
       - name: Build project
         run: npm run build
 
