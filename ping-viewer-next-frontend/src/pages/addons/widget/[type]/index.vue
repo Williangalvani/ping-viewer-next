@@ -38,9 +38,10 @@
 
     <div v-else-if="widgetComponent && deviceData" class="widget-container h-full w-full">
       <component :is="widgetComponent" v-bind="widgetProps" class="h-full w-full bg-transparent" ref="widgetRef"
-        @settings-change="handleWidgetSettingsChange" />
+        @settings-change="handleWidgetSettingsChange" v-on="cockpitMapListeners" />
       <Ping360WidgetControls v-if="widgetType === 'ping360'" :is-recording="isRecording"
         :range="ping360Range" :gain="ping360Gain" :sector="ping360Sector"
+        :map-available="cockpitMapAvailable" :map-enabled="cockpitMapEnabled"
         @button-click="handleMaskButtonClick" />
       <Ping1DWidgetControls v-if="widgetType === 'ping1d'" :is-recording="isRecording"
         :is-auto-gain="isAutoGain" :range="ping1DRange" :gain="ping1DGain"
@@ -50,6 +51,7 @@
 </template>
 
 <script>
+import { useCockpitMapMesh } from '@/composables/useCockpitMapMesh';
 import { usePingDeviceStore } from '@/stores/deviceAgent';
 import { listenToDatalakeVariable } from '@bluerobotics/cockpit-api';
 import Ping1DLoader from '@components/widgets/sonar1d/Ping1DLoader.vue';
@@ -123,6 +125,13 @@ export default defineComponent({
     };
 
     const widgetType = computed(() => route.params.type?.toLowerCase());
+
+    const cockpitMap = widgetType.value === 'ping360' ? useCockpitMapMesh(slot) : null;
+    const cockpitMapAvailable = cockpitMap?.available ?? false;
+    const cockpitMapEnabled = computed(() => cockpitMap?.enabled.value ?? false);
+    const cockpitMapListeners = cockpitMapAvailable
+      ? { 'ping360-config': cockpitMap.handleConfig, 'ping360-data': cockpitMap.handlePing }
+      : {};
 
     const deviceTypeName = computed(() => {
       switch (widgetType.value) {
@@ -334,6 +343,15 @@ export default defineComponent({
     const deviceInstance = ref(null);
 
     const handleMaskButtonClick = async (buttonEvent) => {
+      if (buttonEvent.action === 'toggle_map' && cockpitMap) {
+        cockpitMap.enabled.value = !cockpitMap.enabled.value;
+        return;
+      }
+      if (buttonEvent.action === 'clear_map' && cockpitMap) {
+        cockpitMap.clear();
+        return;
+      }
+
       if (!deviceInstance.value && deviceData.value) {
         deviceInstance.value = pingDeviceStore.usePingDevice(
           deviceData.value.device_type,
@@ -918,6 +936,9 @@ export default defineComponent({
       ping360Range,
       ping360Gain,
       ping360Sector,
+      cockpitMapAvailable,
+      cockpitMapEnabled,
+      cockpitMapListeners,
     };
   },
 });
