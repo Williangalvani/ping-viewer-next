@@ -60,6 +60,22 @@
           </v-btn>
         </div>
 
+        <div v-if="mapAvailable" class="control-pill">
+          <v-btn class="pill-btn" icon variant="text" size="small"
+            :aria-label="mapEnabled ? 'Stop drawing on the map' : 'Draw on the map'"
+            @click="emitAction('toggle_map')">
+            <v-icon size="18">{{ mapEnabled ? 'mdi-map-marker-radius' : 'mdi-map-marker-off' }}</v-icon>
+          </v-btn>
+          <span class="pill-content">
+            <span class="pill-label">Map</span>
+            <span class="pill-value">{{ mapEnabled ? 'On' : 'Off' }}</span>
+          </span>
+          <v-btn class="pill-btn" icon variant="text" size="small"
+            aria-label="Clear map" @click="emitAction('clear_map')">
+            <v-icon size="18">mdi-eraser</v-icon>
+          </v-btn>
+        </div>
+
         <v-btn
           class="rec-pill"
           :class="{ 'is-recording': isRecording }"
@@ -105,6 +121,14 @@ const props = defineProps({
   sector: {
     type: Number,
     default: null,
+  },
+  mapAvailable: {
+    type: Boolean,
+    default: false,
+  },
+  mapEnabled: {
+    type: Boolean,
+    default: false,
   },
 });
 
