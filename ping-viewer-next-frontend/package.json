@@ -5,6 +5,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test": "vitest run",
     "lint": "eslint . --fix --ignore-path .gitignore"
   },
   "dependencies": {
@@ -47,6 +48,7 @@
     "vite": "^6.0.7",
     "vite-plugin-vue-layouts-next": "^3.1.0",
     "vite-plugin-vuetify": "^2.0.4",
+    "vitest": "^5.0.5",
     "vue-router": "^4.5.0"
   }
 }
