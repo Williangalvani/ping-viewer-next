@@ -2,6 +2,8 @@
 // map_palette, sonar_colour, ping_quad, map_capacity, ping_period), so a real sonar and BlueSim's
 // draw the same map.
 
+import { type Gradient, colorFromGradient } from '@/components/widgets/colorPalettes';
+
 // ArduPilot's LATLON_TO_M, as BlueSim georeferences with
 export const METRES_PER_DEGREE = 111318.84502145034;
 export const GRADIANS = 400;
@@ -91,6 +93,20 @@ export const mapPalette = (): Uint8Array => {
   for (let index = 1; index < 256; index++) {
     const colour = index === 1 ? [0, 0, 0] : sonarColour((index - 1) / 254);
     palette.set([byte(colour[0]), byte(colour[1]), byte(colour[2]), index], index * 4);
+  }
+  return palette;
+};
+
+// The byte of echo strength mapIndex() gives `index`, 1..255 back onto 0..255
+export const mapLevel = (index: number): number => Math.round(((index - 1) * 255) / 254);
+
+// mapPalette()'s layout and alpha in the colours a widget draws echoes in along `gradient`, silence
+// at 1 included, so the map shows the scan as the widget does
+export const mapPaletteFrom = (gradient: Gradient): Uint8Array => {
+  const palette = new Uint8Array(256 * 4);
+  for (let index = 1; index < 256; index++) {
+    const [r, g, b] = colorFromGradient(mapLevel(index), gradient);
+    palette.set([r, g, b, index], index * 4);
   }
   return palette;
 };

@@ -2,7 +2,7 @@ import { listenToParent, postToParent } from '@/cockpit/mapMeshSender';
 import { type Ping360Config, Ping360MapFeed } from '@/cockpit/ping360MapFeed';
 import { useHeadDown } from '@/components/widgets/sonar360/useHeadDown';
 import { listenToDatalakeVariable } from '@bluerobotics/cockpit-api';
-import { type Ref, onUnmounted, ref, watch } from 'vue';
+import { type MaybeRefOrGetter, type Ref, onUnmounted, ref, toValue, watch } from 'vue';
 
 const FALSE_VALUES = ['0', 'false', 'off', 'no'];
 const POSE_RATE_HZ = 20;
@@ -22,8 +22,12 @@ export const cockpitMapAvailable = (): boolean => {
   return map === null || !FALSE_VALUES.includes(map.toLowerCase());
 };
 
-// Sends a Ping360's scan to the map of the Cockpit embedding this page, as one map mesh per device
-export function useCockpitMapMesh(slot: Ref<number>) {
+// Sends a Ping360's scan to the map of the Cockpit embedding this page, as one map mesh per device,
+// in the widget's colour palette `colorPalette`
+export function useCockpitMapMesh(
+  slot: Ref<number>,
+  colorPalette?: MaybeRefOrGetter<string | undefined>
+) {
   const available = cockpitMapAvailable();
   const enabled = ref(true);
   const headDown = useHeadDown();
@@ -31,6 +35,7 @@ export function useCockpitMapMesh(slot: Ref<number>) {
     slot: slot.value,
     post: postToParent,
     reversed: headDown.value,
+    palette: toValue(colorPalette),
   });
   let active = available;
   let systemId = DEFAULT_SYSTEM_ID;
@@ -46,6 +51,10 @@ export function useCockpitMapMesh(slot: Ref<number>) {
   watch(headDown, (value) => {
     feed.reversed = value;
   });
+  watch(
+    () => toValue(colorPalette),
+    (name) => feed.setPalette(name)
+  );
 
   // The Cockpit API cannot stop listening, so the callbacks of a vehicle no longer followed, or of
   // an unmounted page, just do nothing

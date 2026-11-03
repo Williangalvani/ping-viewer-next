@@ -81,6 +81,7 @@ export default defineComponent({
     const dimensions = ref({ width: 0, height: 0 });
     const yawAngle = ref(0);
     const isRecording = ref(false);
+    const colorPalette = ref('Thermal Blue');
     const ping360WidgetSettings = ref({
       range: null,
       gain: null,
@@ -126,7 +127,8 @@ export default defineComponent({
 
     const widgetType = computed(() => route.params.type?.toLowerCase());
 
-    const cockpitMap = widgetType.value === 'ping360' ? useCockpitMapMesh(slot) : null;
+    const cockpitMap =
+      widgetType.value === 'ping360' ? useCockpitMapMesh(slot, colorPalette) : null;
     const cockpitMapAvailable = cockpitMap?.available ?? false;
     const cockpitMapEnabled = computed(() => cockpitMap?.enabled.value ?? false);
     const cockpitMapListeners = cockpitMapAvailable
@@ -282,7 +284,6 @@ export default defineComponent({
     const commonProps = {
       width: window.innerWidth,
       height: window.innerHeight,
-      colorPalette: 'Thermal Blue',
     };
 
     const ping360Props = {
@@ -318,6 +319,7 @@ export default defineComponent({
         websocketUrl: websocketUrl.value,
         width: dimensions.value.width,
         height: dimensions.value.height,
+        colorPalette: colorPalette.value,
         showControls: false,
       };
 
