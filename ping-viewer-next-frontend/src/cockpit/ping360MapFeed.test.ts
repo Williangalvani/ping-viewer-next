@@ -1,3 +1,4 @@
+import { colorPalettes, paletteGradient } from '@/components/widgets/colorPalettes';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MapMeshMessage } from './mapMeshSender';
 import {
@@ -5,6 +6,7 @@ import {
   Ping360MapFeed,
   UNKNOWN_HDG,
   YAW_STALE_MS,
+  ping360MapPalette,
   ping360MountOffsetGrad,
 } from './ping360MapFeed';
 import {
@@ -13,6 +15,7 @@ import {
   METRES_PER_DEGREE,
   mapCapacity,
   mapPalette,
+  mapPaletteFrom,
   ping360Range,
   pingQuad,
 } from './ping360MapMesh';
@@ -335,5 +338,118 @@ describe('Ping360MapFeed', () => {
     target.dispose();
     target.clear();
     expect(posted.at(-1)?.type).toBe('cockpit:clearMapMesh');
+  });
+});
+
+describe('Ping360MapFeed palette', () => {
+  const CUSTOM = [
+    { pos: 0, color: [10, 20, 30, 255] },
+    { pos: 1, color: [250, 240, 230, 255] },
+  ];
+
+  const storage = (saved: Record<string, string>) => ({
+    getItem: (key: string) => saved[key] ?? null,
+  });
+
+  const scanning = (posted: MapMeshMessage[], palette?: string): Ping360MapFeed => {
+    const target = new Ping360MapFeed({
+      slot: 2,
+      post: (message) => posted.push(message),
+      palette,
+    });
+    place(target, LAT, LON);
+    target.setYawRadians(0);
+    target.handleConfig(CONFIG);
+    return target;
+  };
+
+  const meshPalette = (posted: MapMeshMessage[]): number[] => {
+    const set = posted.find((message) => message.type === 'cockpit:setMapMesh');
+    return Array.from((set?.mesh as Record<string, unknown>).palette as Uint8Array);
+  };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('is BlueSim palette without a palette name', () => {
+    expect(Array.from(ping360MapPalette())).toEqual(Array.from(mapPalette()));
+    expect(Array.from(ping360MapPalette(''))).toEqual(Array.from(mapPalette()));
+  });
+
+  it('is the widget palette of a name, an unknown one Thermal Blue as in the widget', () => {
+    const ocean = Array.from(mapPaletteFrom(colorPalettes.Ocean));
+    expect(Array.from(ping360MapPalette('Ocean'))).toEqual(ocean);
+    const thermalBlue = Array.from(mapPaletteFrom(colorPalettes['Thermal Blue']));
+    expect(Array.from(ping360MapPalette('Nonexistent'))).toEqual(thermalBlue);
+  });
+
+  it('takes Custom from what SonarColorOptions saved, BlueSim palette without it', () => {
+    expect(
+      paletteGradient('Custom', storage({ customColorPalette: JSON.stringify(CUSTOM) }))
+    ).toEqual(CUSTOM);
+    expect(paletteGradient('Custom', storage({}))).toBeUndefined();
+    expect(paletteGradient('Custom', storage({ customColorPalette: 'not json' }))).toBeUndefined();
+    expect(paletteGradient('Custom', storage({ customColorPalette: '[]' }))).toBeUndefined();
+    const outOfRange = [{ pos: 0, color: [300, 0, 0, 255] }];
+    expect(
+      paletteGradient('Custom', storage({ customColorPalette: JSON.stringify(outOfRange) }))
+    ).toBeUndefined();
+
+    vi.stubGlobal('localStorage', storage({ customColorPalette: JSON.stringify(CUSTOM) }));
+    expect(Array.from(ping360MapPalette('Custom'))).toEqual(Array.from(mapPaletteFrom(CUSTOM)));
+    vi.stubGlobal('localStorage', storage({}));
+    expect(Array.from(ping360MapPalette('Custom'))).toEqual(Array.from(mapPalette()));
+  });
+
+  it('makes the mesh in the palette of the name it was given', () => {
+    const posted: MapMeshMessage[] = [];
+    scanning(posted, 'Ocean').handlePing(0, levels(1200));
+    vi.advanceTimersByTime(20);
+    expect(meshPalette(posted)).toEqual(Array.from(mapPaletteFrom(colorPalettes.Ocean)));
+  });
+
+  it('makes the mesh in a palette set before the first ping, sending nothing before it', () => {
+    const posted: MapMeshMessage[] = [];
+    const target = scanning(posted);
+    target.setPalette('Heatmap');
+    expect(posted).toEqual([]);
+    target.handlePing(0, levels(1200));
+    vi.advanceTimersByTime(20);
+    expect(meshPalette(posted)).toEqual(Array.from(mapPaletteFrom(colorPalettes.Heatmap)));
+  });
+
+  it('re-sends only the palette when it changes, the mesh and its pings kept', () => {
+    vi.stubGlobal('localStorage', storage({ customColorPalette: JSON.stringify(CUSTOM) }));
+    const posted: MapMeshMessage[] = [];
+    const target = scanning(posted, 'Thermal Blue');
+    for (let angle = 0; angle < 3; angle++) target.handlePing(angle, levels(1200));
+    vi.advanceTimersByTime(20);
+    const before = posted.length;
+    const seq = target.sender?.seq;
+
+    target.setPalette('Thermal Blue');
+    expect(posted).toHaveLength(before);
+
+    target.setPalette('Ocean');
+    target.setPalette('Custom');
+    vi.advanceTimersByTime(1000);
+    const after = posted.slice(before);
+    expect(after.map((message) => message.type)).toEqual([
+      'cockpit:setMapMeshPalette',
+      'cockpit:setMapMeshPalette',
+    ]);
+    expect(after[0].id).toBe('ping-viewer-next-ping360-2');
+    expect(Array.from(after[0].palette as Uint8Array)).toEqual(
+      Array.from(mapPaletteFrom(colorPalettes.Ocean))
+    );
+    expect(Array.from(after[1].palette as Uint8Array)).toEqual(Array.from(mapPaletteFrom(CUSTOM)));
+    expect(target.sender?.seq).toBe(seq);
+
+    target.handlePing(3, levels(1200));
+    vi.advanceTimersByTime(20);
+    expect(posted.at(-1)).toMatchObject({ type: 'cockpit:setMapMeshQuads', first: 3 });
+    target.sender?.replay();
+    expect(meshPalette(posted.slice(before))).toEqual(Array.from(mapPaletteFrom(CUSTOM)));
   });
 });

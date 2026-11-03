@@ -51,83 +51,9 @@
 
 <script>
 import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue';
+import { colorPalettes, getColorFromPalette } from './colorPalettes';
 
-export const colorPalettes = {
-  Transparent: [
-    { pos: 0, color: [255, 255, 255, 0] },
-    { pos: 1, color: [255, 255, 255, 255] },
-  ],
-  Heatmap: [
-    { pos: 0, color: [0, 0, 0, 255] },
-    { pos: 0.25, color: [255, 0, 0, 255] },
-    { pos: 0.5, color: [255, 255, 0, 255] },
-    { pos: 0.75, color: [255, 255, 255, 255] },
-    { pos: 1, color: [255, 255, 255, 255] },
-  ],
-  Grayscale: [
-    { pos: 0, color: [0, 0, 0, 255] },
-    { pos: 1, color: [255, 255, 255, 255] },
-  ],
-  Ocean: [
-    { pos: 0, color: [0, 0, 60, 255] },
-    { pos: 0.5, color: [0, 63, 255, 255] },
-    { pos: 1, color: [0, 255, 255, 255] },
-  ],
-  'Thermal Blue': [
-    { pos: 0, color: [5, 34, 95, 255] },
-    { pos: 0.25, color: [106, 168, 79, 255] },
-    { pos: 0.5, color: [255, 255, 0, 255] },
-    { pos: 0.75, color: [127, 96, 0, 255] },
-    { pos: 1, color: [92, 15, 8, 255] },
-  ],
-  'Thermal Black': [
-    { pos: 0, color: [0, 0, 0, 255] },
-    { pos: 0.25, color: [106, 168, 79, 255] },
-    { pos: 0.5, color: [255, 255, 0, 255] },
-    { pos: 0.75, color: [127, 96, 0, 255] },
-    { pos: 1, color: [92, 15, 8, 255] },
-  ],
-  'Thermal White': [
-    { pos: 0, color: [255, 255, 255, 255] },
-    { pos: 0.25, color: [106, 168, 79, 255] },
-    { pos: 0.5, color: [255, 255, 0, 255] },
-    { pos: 0.75, color: [127, 96, 0, 255] },
-    { pos: 1, color: [92, 15, 8, 255] },
-  ],
-  'Monochrome Black': [
-    { pos: 0, color: [0, 0, 0, 255] },
-    { pos: 1, color: [255, 255, 255, 255] },
-  ],
-  'Monochrome White': [
-    { pos: 0, color: [255, 255, 255, 255] },
-    { pos: 1, color: [0, 0, 0, 255] },
-  ],
-  'Monochrome Sepia': [
-    { pos: 0, color: [48, 33, 19, 255] },
-    { pos: 1, color: [232, 201, 67, 255] },
-  ],
-  Custom: [],
-};
-
-export const getColorFromPalette = (value, palette) => {
-  const intensity = value / 255;
-  const gradient = colorPalettes[palette] || colorPalettes['Thermal Blue'];
-
-  for (let i = 1; i < gradient.length; i++) {
-    if (intensity <= gradient[i].pos) {
-      const t = (intensity - gradient[i - 1].pos) / (gradient[i].pos - gradient[i - 1].pos);
-      const c1 = gradient[i - 1].color;
-      const c2 = gradient[i].color;
-      return [
-        Math.round(c1[0] + t * (c2[0] - c1[0])),
-        Math.round(c1[1] + t * (c2[1] - c1[1])),
-        Math.round(c1[2] + t * (c2[2] - c1[2])),
-        Math.round(c1[3] + t * (c2[3] - c1[3])),
-      ];
-    }
-  }
-  return gradient[gradient.length - 1].color;
-};
+export { colorPalettes, getColorFromPalette };
 
 export default {
   name: 'SonarColorOptions',

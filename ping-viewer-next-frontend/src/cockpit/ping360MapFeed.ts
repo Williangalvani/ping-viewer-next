@@ -5,6 +5,7 @@
 // until a ping comes with both a known range, from its own message or the device config, and a
 // valid position, so a vehicle without a fix never makes an empty mesh.
 
+import { paletteGradient } from '@/components/widgets/colorPalettes';
 import { type MapMeshPost, type MapMeshReply, MapMeshSender } from './mapMeshSender';
 import {
   GRADIANS,
@@ -15,6 +16,7 @@ import {
   SOUND_SPEED,
   isValidPosition,
   mapPalette,
+  mapPaletteFrom,
   ping360Range,
   pingQuad,
 } from './ping360MapMesh';
@@ -38,9 +40,20 @@ export interface Ping360MapFeedOptions {
   blankM?: number;
   mountOffsetGrad?: number;
   reversed?: boolean;
+  // the name of the widget's colour palette
+  palette?: string;
 }
 
 export const ping360MeshId = (slot: number): string => `ping-viewer-next-ping360-${slot}`;
+
+// The map palette of the widget's colour palette `name`, or BlueSim's mapPalette() without one
+export const ping360MapPalette = (name?: string): Uint8Array => {
+  const gradient = paletteGradient(name);
+  return gradient ? mapPaletteFrom(gradient) : mapPalette();
+};
+
+const sameBytes = (a: Uint8Array, b: Uint8Array): boolean =>
+  a.length === b.length && a.every((value, k) => value === b[k]);
 
 const isFiniteNumber = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value);
@@ -75,6 +88,7 @@ export class Ping360MapFeed {
   blankM: number | undefined;
   mountOffsetGrad: number;
   reversed: boolean;
+  palette: Uint8Array;
   // false pauses the feed: what is on the map stays, nothing new is written
   enabled = true;
   sender: MapMeshSender | undefined;
@@ -95,6 +109,16 @@ export class Ping360MapFeed {
     this.blankM = options.blankM;
     this.mountOffsetGrad = options.mountOffsetGrad ?? 0;
     this.reversed = options.reversed ?? false;
+    this.palette = ping360MapPalette(options.palette);
+  }
+
+  // Recolours the map with the widget's colour palette `name`: only the palette goes to Cockpit,
+  // the mesh and its pings stay
+  setPalette(name?: string): void {
+    const palette = ping360MapPalette(name);
+    if (sameBytes(palette, this.palette)) return;
+    this.palette = palette;
+    this.sender?.setPalette(palette);
   }
 
   setLatitudeE7(value: unknown): void {
@@ -210,7 +234,7 @@ export class Ping360MapFeed {
     );
     sender.filter = 'linear';
     sender.opacity = 1;
-    sender.palette = mapPalette();
+    sender.palette = this.palette;
     sender.now = this.now;
     this.sender = sender;
     sender.create();

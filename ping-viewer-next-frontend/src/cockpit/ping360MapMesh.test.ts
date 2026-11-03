@@ -1,3 +1,8 @@
+import {
+  colorFromGradient,
+  colorPalettes,
+  getColorFromPalette,
+} from '@/components/widgets/colorPalettes';
 import { describe, expect, it } from 'vitest';
 // BlueSim's own values, from its ping360.gd and cockpit_map_mesh.gd (make_fixtures.gd)
 import fixture from './__fixtures__/bluesim.json';
@@ -8,7 +13,9 @@ import {
   type PingQuadOptions,
   mapCapacity,
   mapIndex,
+  mapLevel,
   mapPalette,
+  mapPaletteFrom,
   ping360Range,
   pingPeriod,
   pingQuad,
@@ -33,6 +40,63 @@ describe('Ping360 map palette', () => {
 
   it('is byte for byte BlueSim palette', () => {
     expect(Array.from(mapPalette())).toEqual(fixture.palette);
+  });
+});
+
+describe('Ping360 map palette from a widget gradient', () => {
+  const entry = (palette: Uint8Array, index: number): number[] =>
+    Array.from(palette.subarray(index * 4, index * 4 + 4));
+
+  it.each(Object.keys(colorPalettes).filter((name) => name !== 'Custom'))(
+    'keeps the map layout for %s',
+    (name) => {
+      const gradient = colorPalettes[name];
+      const palette = mapPaletteFrom(gradient);
+      expect(palette).toHaveLength(256 * 4);
+      expect(entry(palette, 0)).toEqual([0, 0, 0, 0]);
+      for (let index = 1; index < 256; index++) expect(palette[index * 4 + 3]).toBe(index);
+      expect(entry(palette, 1).slice(0, 3)).toEqual(colorFromGradient(0, gradient).slice(0, 3));
+      expect(entry(palette, 255).slice(0, 3)).toEqual(colorFromGradient(255, gradient).slice(0, 3));
+      expect(entry(palette, 1).slice(0, 3)).toEqual(gradient[0].color.slice(0, 3));
+      expect(entry(palette, 255).slice(0, 3)).toEqual(gradient.at(-1)?.color.slice(0, 3));
+    }
+  );
+
+  it('colours each entry as the widget does the level mapIndex() gives it', () => {
+    for (let index = 1; index < 256; index++) {
+      expect(mapIndex(mapLevel(index))).toBe(index);
+    }
+    const palette = mapPaletteFrom(colorPalettes['Thermal Blue']);
+    for (let index = 1; index < 256; index++) {
+      const colour = getColorFromPalette(mapLevel(index), 'Thermal Blue').slice(0, 3);
+      expect(entry(palette, index)).toEqual([...colour, index]);
+    }
+  });
+
+  it('has Thermal Blue colours', () => {
+    const palette = mapPaletteFrom(colorPalettes['Thermal Blue']);
+    expect(entry(palette, 1)).toEqual([5, 34, 95, 1]);
+    // level 64, just past the 0.25 stop
+    expect(entry(palette, 65)).toEqual([107, 168, 79, 65]);
+    // level 128, just past the 0.5 stop
+    expect(entry(palette, 128)).toEqual([254, 254, 0, 128]);
+    // level 191, just before the 0.75 stop
+    expect(entry(palette, 191)).toEqual([128, 97, 0, 191]);
+    expect(entry(palette, 255)).toEqual([92, 15, 8, 255]);
+  });
+
+  it('takes a custom gradient, its alpha left to the index', () => {
+    const custom = [
+      { pos: 0, color: [10, 20, 30, 0] },
+      { pos: 0.5, color: [200, 100, 0, 128] },
+      { pos: 1, color: [250, 250, 250, 255] },
+    ];
+    const palette = mapPaletteFrom(custom);
+    expect(entry(palette, 0)).toEqual([0, 0, 0, 0]);
+    expect(entry(palette, 1)).toEqual([10, 20, 30, 1]);
+    // level 126, the last before the 0.5 stop
+    expect(entry(palette, 127)).toEqual([198, 99, 0, 127]);
+    expect(entry(palette, 255)).toEqual([250, 250, 250, 255]);
   });
 });
 
