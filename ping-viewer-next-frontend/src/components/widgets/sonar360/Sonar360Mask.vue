@@ -1,6 +1,6 @@
 <template>
 	<div @mouseleave="onMouseLeave" @mousemove="onMouseMove" class="relative w-full h-full overflow-visible">
-		<div class="absolute inset-0 pointer-events-none" :style="{ transform: `rotate(${effectiveYaw}deg)`, transformOrigin: 'center' }">
+		<div class="absolute inset-0 pointer-events-none" :style="{ transform: `rotate(${rotation}deg)`, transformOrigin: 'center' }">
 			<slot></slot>
 		</div>
 
@@ -18,9 +18,9 @@
 
 			<!--
 				Everything drawn here is fixed to the sonar head, so it takes the same heading
-				offset the shader applies to the data. The depth labels below stay upright.
+				and mount rotation as the data. The depth labels below stay upright.
 			-->
-			<g :transform="`rotate(${effectiveYaw} 50 50)`">
+			<g :transform="`rotate(${rotation} 50 50)`">
 				<path v-if="!isFullCircle" :d="sectorPath" fill="none" :stroke="radiusLineColor"
 					:stroke-width="radiusLineWidth" vector-effect="non-scaling-stroke" />
 
@@ -76,7 +76,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useUnits } from '../../../composables/useUnits';
+import { plotRotation, sonarToScreenAngle } from './sonar360Rotation';
 import { useHeadDown } from './useHeadDown';
+import { useMountRotation } from './useMountRotation';
 
 const instanceId = ref(Math.random().toString(36).slice(2, 8));
 const sweepGradientId = computed(() => `sweep-grad-${instanceId.value}`);
@@ -87,6 +89,7 @@ const mousePosition = ref({ x: '50%', y: '50%' });
 const { depthValue, depthUnit } = useUnits();
 
 const headDown = useHeadDown();
+const mountRotation = useMountRotation();
 
 const props = defineProps<{
   angle: number;
@@ -110,6 +113,9 @@ const isFullCircle = computed(() => {
 });
 
 const effectiveYaw = computed(() => (isFullCircle.value ? props.yawAngle : 0));
+const rotation = computed(() =>
+  plotRotation(effectiveYaw.value, mountRotation.value, headDown.value)
+);
 
 const angleLines = computed(() => {
   const all = [0, 45, 90, 135, 180, 225, 270, 315];
@@ -179,8 +185,14 @@ const getRadiusLinePath = (radius: number) => {
   return `M ${startX} ${startY} A ${radius} ${radius} 0 ${largeArcFlag} ${sweepFlag} ${endX} ${endY}`;
 };
 
+// The markers layer is not mirrored on screen, so a sector's labels are moved to where its
+// 45 degree edge is drawn to stay on the arcs.
+const markerAngle = computed(() =>
+  isFullCircle.value ? 45 : sonarToScreenAngle(45, mountRotation.value, headDown.value)
+);
+
 const getMarkerPositionPercent = (radius: number) => {
-  const angle = 45;
+  const angle = markerAngle.value;
   const rad = (angle - 90) * (Math.PI / 180);
   return {
     x: 50 + radius * Math.cos(rad),
