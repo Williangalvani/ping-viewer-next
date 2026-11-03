@@ -81,19 +81,36 @@
               </div>
             </div>
 
-            <v-tooltip text="Used when the sonar is mounted upside down" location="left">
-              <template v-slot:activator="{ props }">
-                <div v-bind="props" style="display: inline-block">
-                  <v-checkbox
-                    v-model="sharedHeadDown"
-                    label="Head-down"
-                    hide-details
-                    density="compact"
-                    class="mt-2 mb-2"
-                  />
-                </div>
-              </template>
-            </v-tooltip>
+            <div class="d-flex align-center gap-4">
+              <v-tooltip text="Used when the sonar is mounted upside down" location="left">
+                <template v-slot:activator="{ props }">
+                  <div v-bind="props" style="display: inline-block">
+                    <v-checkbox
+                      v-model="sharedHeadDown"
+                      label="Head-down"
+                      hide-details
+                      density="compact"
+                      class="mt-2 mb-2"
+                    />
+                  </div>
+                </template>
+              </v-tooltip>
+
+              <v-tooltip text="Rotates the sonar display, for sonars mounted rotated" location="left">
+                <template v-slot:activator="{ props }">
+                  <div v-bind="props" style="display: inline-block">
+                    <v-select
+                      v-model="sharedMountRotation"
+                      :items="mountRotationItems"
+                      label="Rotation"
+                      hide-details
+                      density="compact"
+                      style="width: 110px"
+                    />
+                  </div>
+                </template>
+              </v-tooltip>
+            </div>
           </div>
         </v-expand-transition>
 
@@ -226,6 +243,7 @@ import { useDebounceFn } from '@vueuse/core';
 import { computed, ref, watch } from 'vue';
 import { useUnits } from '../../../composables/useUnits';
 import { useHeadDown } from './useHeadDown';
+import { MOUNT_ROTATIONS, useMountRotation } from './useMountRotation';
 
 const { distanceLabel, speedUnit } = useUnits();
 
@@ -278,6 +296,11 @@ const autoMode = ref(true);
 const range = ref(10);
 const centerAngle = ref(180);
 const sharedHeadDown = useHeadDown();
+const sharedMountRotation = useMountRotation();
+const mountRotationItems = MOUNT_ROTATIONS.map((degrees) => ({
+  title: `${degrees}°`,
+  value: degrees,
+}));
 const width = ref(180);
 const angleRange = ref([0, 360]);
 

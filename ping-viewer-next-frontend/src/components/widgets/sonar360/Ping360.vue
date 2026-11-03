@@ -31,12 +31,16 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { getColorFromPalette } from '../SonarColorOptions.vue';
 import Sonar360Mask from './Sonar360Mask.vue';
 import Sonar360Shader from './Sonar360Shader.vue';
+import { screenSector } from './sonar360Rotation';
 import { useHeadDown } from './useHeadDown';
+import { useMountRotation } from './useMountRotation';
 
 // When headDown is on we mirror the whole sonar container horizontally.
 // `Sonar360Mask` applies a second `scaleX(-1)` to its depth markers so their
 // text stays readable. Both flips must stay in sync.
 const headDown = useHeadDown();
+// Applied by `Sonar360Mask`; here it only affects how the sector is fitted.
+const mountRotation = useMountRotation();
 
 const props = defineProps({
   isFrozen: {
@@ -128,14 +132,19 @@ const size = ref(300);
 // outermost depth arc instead of overshooting past it by half a stroke width.
 const shaderMaxRadius = computed(() => (50 - props.lineWidth / 2) / 50);
 
+// The translate below is applied outside the mirror, so the sector is fitted as drawn on screen.
+const screenAngles = computed(() =>
+  screenSector(props.startAngle, props.endAngle, mountRotation.value, headDown.value)
+);
+
 const sectorWidth = computed(() => {
-  const diff = props.endAngle - props.startAngle;
+  const diff = screenAngles.value.endAngle - screenAngles.value.startAngle;
   return diff >= 0 ? diff : diff + 360;
 });
 
 const isHalfCircleView = computed(() => {
   if (sectorWidth.value <= 180) return false;
-  return props.startAngle >= 270 && props.endAngle <= 90;
+  return screenAngles.value.startAngle >= 270 && screenAngles.value.endAngle <= 90;
 });
 
 function isAngleInSector(angle, start, end) {
@@ -150,20 +159,21 @@ const sectorBoundingBox = computed(() => {
     return { minX: 0, maxX: 1, minY: 0, maxY: 1 };
   }
 
+  const { startAngle, endAngle } = screenAngles.value;
   const toRad = (angle) => ((angle - 90) * Math.PI) / 180;
   const points = [{ x: 0.5, y: 0.5 }];
 
   points.push({
-    x: 0.5 + 0.5 * Math.cos(toRad(props.startAngle)),
-    y: 0.5 + 0.5 * Math.sin(toRad(props.startAngle)),
+    x: 0.5 + 0.5 * Math.cos(toRad(startAngle)),
+    y: 0.5 + 0.5 * Math.sin(toRad(startAngle)),
   });
   points.push({
-    x: 0.5 + 0.5 * Math.cos(toRad(props.endAngle)),
-    y: 0.5 + 0.5 * Math.sin(toRad(props.endAngle)),
+    x: 0.5 + 0.5 * Math.cos(toRad(endAngle)),
+    y: 0.5 + 0.5 * Math.sin(toRad(endAngle)),
   });
 
   for (const cardinal of [0, 90, 180, 270]) {
-    if (isAngleInSector(cardinal, props.startAngle, props.endAngle)) {
+    if (isAngleInSector(cardinal, startAngle, endAngle)) {
       points.push({
         x: 0.5 + 0.5 * Math.cos(toRad(cardinal)),
         y: 0.5 + 0.5 * Math.sin(toRad(cardinal)),
@@ -252,7 +262,7 @@ onUnmounted(() => {
   }
 });
 
-watch([() => props.startAngle, () => props.endAngle], () => {
+watch(screenAngles, () => {
   updateSize();
 });
 
