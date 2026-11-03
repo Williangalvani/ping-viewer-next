@@ -111,6 +111,20 @@
                 </template>
               </v-tooltip>
             </div>
+
+            <v-tooltip text="Turn off to save CPU/GPU; data is still streamed, recorded and sent to the map" location="left">
+              <template v-slot:activator="{ props }">
+                <div v-bind="props" style="display: inline-block">
+                  <v-checkbox
+                    v-model="sharedRenderDisplay"
+                    label="Render sonar display"
+                    hide-details
+                    density="compact"
+                    class="mb-2"
+                  />
+                </div>
+              </template>
+            </v-tooltip>
           </div>
         </v-expand-transition>
 
@@ -244,6 +258,7 @@ import { computed, ref, watch } from 'vue';
 import { useUnits } from '../../../composables/useUnits';
 import { useHeadDown } from './useHeadDown';
 import { MOUNT_ROTATIONS, useMountRotation } from './useMountRotation';
+import { useRenderDisplay } from './useRenderDisplay';
 
 const { distanceLabel, speedUnit } = useUnits();
 
@@ -297,6 +312,7 @@ const range = ref(10);
 const centerAngle = ref(180);
 const sharedHeadDown = useHeadDown();
 const sharedMountRotation = useMountRotation();
+const sharedRenderDisplay = useRenderDisplay();
 const mountRotationItems = MOUNT_ROTATIONS.map((degrees) => ({
   title: `${degrees}°`,
   value: degrees,

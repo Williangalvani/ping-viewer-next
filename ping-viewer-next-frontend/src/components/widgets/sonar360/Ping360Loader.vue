@@ -23,12 +23,13 @@
         </v-dialog>
       </FloatingControls>
 
-      <Ping360 :isFrozen="isFrozen" :measurement="liveMeasurement" :angle="liveAngle" :colorPalette="colorPalette"
+      <Ping360 v-if="renderDisplay" :isFrozen="isFrozen" :measurement="liveMeasurement" :angle="liveAngle" :colorPalette="colorPalette"
         :lineColor="lineColor" :lineWidth="lineWidth" :maxDistance="currentRange" :numMarkers="numMarkers"
         :showRadiusLines="showRadiusLines" :showMarkers="showMarkers" :radiusLineColor="radiusLineColor"
         :markerColor="markerColor" :textBackgroundColor="markerBackgroundColor" :radiusLineWidth="radiusLineWidth"
         :debug="debug" :startAngle="startAngle" :endAngle="endAngle" :yaw_angle="yawAngle" v-bind="$attrs"
         class="h-full w-full" />
+      <div v-else class="display-off h-full w-full">Sonar display off</div>
     </div>
   </div>
 </template>
@@ -40,6 +41,7 @@ import DataRecorder from '../DataRecorder.vue';
 import FloatingControls from '../FloatingControls.vue';
 import Ping360 from './Ping360.vue';
 import Ping360Settings from './Ping360Settings.vue';
+import { useRenderDisplay } from './useRenderDisplay';
 
 const props = defineProps({
   device: {
@@ -119,6 +121,7 @@ const connectionStatus = ref('Disconnected');
 const socket = ref(null);
 const isFrozen = ref(false);
 const isSettingsOpen = ref(false);
+const renderDisplay = useRenderDisplay();
 
 const recordingSessions = inject('recordingSessions', ref(new Map()));
 const isRecording = computed(() => {
@@ -228,13 +231,15 @@ const connectWebSocket = () => {
       const messageData = ping360Data.DeviceData || ping360Data.AutoDeviceData;
       if (!messageData || messageData.angle === undefined || !messageData.data) return;
 
-      const angleWithOffset = (messageData.angle + 400 + offset.value) % 400;
+      if (renderDisplay.value) {
+        const angleWithOffset = (messageData.angle + 400 + offset.value) % 400;
 
-      liveMeasurement.value = {
-        angle: angleWithOffset,
-        data: new Uint8Array(messageData.data),
-      };
-      liveAngle.value = angleWithOffset;
+        liveMeasurement.value = {
+          angle: angleWithOffset,
+          data: new Uint8Array(messageData.data),
+        };
+        liveAngle.value = angleWithOffset;
+      }
       emit('ping360-data', messageData);
 
       if (props.debug) {
@@ -319,6 +324,15 @@ onUnmounted(() => {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+}
+
+.display-off {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 14px;
+  user-select: none;
 }
 
 .glass-button {

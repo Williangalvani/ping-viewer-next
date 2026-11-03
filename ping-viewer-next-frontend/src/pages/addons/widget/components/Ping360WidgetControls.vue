@@ -60,6 +60,19 @@
           </v-btn>
         </div>
 
+        <div class="control-pill">
+          <v-btn class="pill-btn" icon variant="text" size="small"
+            :aria-label="displayEnabled ? 'Hide the sonar display' : 'Show the sonar display'"
+            @click="emitAction('toggle_display')">
+            <v-icon size="18">{{ displayEnabled ? 'mdi-eye' : 'mdi-eye-off' }}</v-icon>
+          </v-btn>
+          <span class="pill-content">
+            <span class="pill-label">Display</span>
+            <span class="pill-value">{{ displayEnabled ? 'On' : 'Off' }}</span>
+          </span>
+          <span class="pill-spacer" />
+        </div>
+
         <div v-if="mapAvailable" class="control-pill">
           <v-btn class="pill-btn" icon variant="text" size="small"
             :aria-label="mapEnabled ? 'Stop drawing on the map' : 'Draw on the map'"
@@ -129,6 +142,10 @@ const props = defineProps({
   mapEnabled: {
     type: Boolean,
     default: false,
+  },
+  displayEnabled: {
+    type: Boolean,
+    default: true,
   },
 });
 
@@ -257,6 +274,11 @@ const emitAction = (action, value) => {
   z-index: 2;
   pointer-events: auto !important;
   cursor: pointer;
+}
+
+.pill-spacer {
+  width: 32px;
+  flex-shrink: 0;
 }
 
 .pill-content {
