@@ -42,7 +42,7 @@
       <Ping360WidgetControls v-if="widgetType === 'ping360'" :is-recording="isRecording"
         :range="ping360Range" :gain="ping360Gain" :sector="ping360Sector"
         :map-available="cockpitMapAvailable" :map-enabled="cockpitMapEnabled"
-        @button-click="handleMaskButtonClick" />
+        :display-enabled="renderDisplay" @button-click="handleMaskButtonClick" />
       <Ping1DWidgetControls v-if="widgetType === 'ping1d'" :is-recording="isRecording"
         :is-auto-gain="isAutoGain" :range="ping1DRange" :gain="ping1DGain"
         @button-click="handleMaskButtonClick" />
@@ -56,6 +56,7 @@ import { usePingDeviceStore } from '@/stores/deviceAgent';
 import { listenToDatalakeVariable } from '@bluerobotics/cockpit-api';
 import Ping1DLoader from '@components/widgets/sonar1d/Ping1DLoader.vue';
 import Ping360Loader from '@components/widgets/sonar360/Ping360Loader.vue';
+import { useRenderDisplay } from '@components/widgets/sonar360/useRenderDisplay';
 import { computed, defineComponent, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import Ping1DWidgetControls from '../components/Ping1DWidgetControls.vue';
@@ -134,6 +135,7 @@ export default defineComponent({
     const cockpitMapListeners = cockpitMapAvailable
       ? { 'ping360-config': cockpitMap.handleConfig, 'ping360-data': cockpitMap.handlePing }
       : {};
+    const renderDisplay = useRenderDisplay();
 
     const deviceTypeName = computed(() => {
       switch (widgetType.value) {
@@ -345,6 +347,10 @@ export default defineComponent({
     const deviceInstance = ref(null);
 
     const handleMaskButtonClick = async (buttonEvent) => {
+      if (buttonEvent.action === 'toggle_display') {
+        renderDisplay.value = !renderDisplay.value;
+        return;
+      }
       if (buttonEvent.action === 'toggle_map' && cockpitMap) {
         cockpitMap.enabled.value = !cockpitMap.enabled.value;
         return;
@@ -941,6 +947,7 @@ export default defineComponent({
       cockpitMapAvailable,
       cockpitMapEnabled,
       cockpitMapListeners,
+      renderDisplay,
     };
   },
 });
