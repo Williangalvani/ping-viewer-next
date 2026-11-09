@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::net::SocketAddrV4;
+use std::sync::Arc;
 use std::time::Duration;
 
 use bluerobotics_ping::ping1d::Device as Ping1D;
@@ -59,7 +60,9 @@ impl DeviceFactory {
 
                 SourceType::Serial(serial_stream)
             }
-            SourceSelection::FakeStream(_) => SourceType::Fake(FakeStream::new(device_type)),
+            SourceSelection::FakeStream(fake) => {
+                SourceType::Fake(FakeStream::new(device_type, Arc::default(), fake.head()))
+            }
         };
 
         let device = match port {

@@ -29,10 +29,11 @@ use tracing::{debug, error, info, trace, warn};
 use udp_stream::UdpStream;
 
 use crate::device::manager::slots::{DeviceConnection, DeviceIdentity, SlotRegistry};
+use crate::vehicle::SharedVehicleData;
 
 use super::{
     devices::{DeviceActor, DeviceActorHandler, DeviceType, PingAnswer},
-    fake::FakeStream,
+    fake::{FakeStream, HeadOrientation},
 };
 use bluerobotics_ping::{
     common::{DeviceInformationStruct, ProtocolVersionStruct},
@@ -214,6 +215,19 @@ fn get_fake_source_id() -> u16 {
 pub struct SourceFakeStruct {
     #[serde(skip, default = "get_fake_source_id")]
     fake_id: u16,
+    /// Simulates a Ping360 head mounted upside down (Ping360 only)
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    head_inverted: bool,
+}
+
+impl SourceFakeStruct {
+    pub fn head(&self) -> HeadOrientation {
+        if self.head_inverted {
+            HeadOrientation::Inverted
+        } else {
+            HeadOrientation::Upright
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -230,6 +244,7 @@ pub struct DeviceManager {
     slot_registry: SlotRegistry,
     discovery_service: DiscoveryComponent,
     pub manager_handler: ManagerActorHandler,
+    vehicle_data: SharedVehicleData,
 }
 
 #[derive(Debug)]
@@ -454,7 +469,10 @@ impl DeviceManager {
         }
     }
 
-    pub fn new(size: usize) -> (Self, ManagerActorHandler) {
+    pub fn new_with_pose(
+        size: usize,
+        vehicle_data: SharedVehicleData,
+    ) -> (Self, ManagerActorHandler) {
         let (sender, receiver) = mpsc::channel(size);
 
         let actor_handler = ManagerActorHandler { sender };
@@ -464,10 +482,15 @@ impl DeviceManager {
             slot_registry: SlotRegistry::new(),
             discovery_service: DiscoveryComponent::new(),
             manager_handler: actor_handler.clone(),
+            vehicle_data,
         };
 
         trace!("DeviceManager and handler successfully created: Success");
         (actor, actor_handler)
+    }
+
+    pub fn new(size: usize) -> (Self, ManagerActorHandler) {
+        Self::new_with_pose(size, Arc::default())
     }
 
     pub fn get_device_manager_handler(&self) -> ManagerActorHandler {
@@ -853,7 +876,11 @@ impl DeviceManager {
 
                 SourceType::Serial(serial_stream)
             }
-            SourceSelection::FakeStream(_) => SourceType::Fake(FakeStream::new(device_selection)),
+            SourceSelection::FakeStream(fake) => SourceType::Fake(FakeStream::new(
+                device_selection,
+                self.vehicle_data.clone(),
+                fake.head(),
+            )),
         };
 
         let device = match port {
@@ -1079,7 +1106,11 @@ impl DeviceManager {
 
                 SourceType::Serial(serial_stream)
             }
-            SourceSelection::FakeStream(_) => SourceType::Fake(FakeStream::new(device_type)),
+            SourceSelection::FakeStream(fake) => SourceType::Fake(FakeStream::new(
+                device_type,
+                self.vehicle_data.clone(),
+                fake.head(),
+            )),
         };
 
         let device_type_inner = match port {
@@ -1858,4 +1889,41 @@ pub async fn turnoff_device_continuous_mode(source: &SourceSelection) -> Result<
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_with_pose_shares_vehicle_data() {
+        let pose = SharedVehicleData::default();
+        let (manager, _) = DeviceManager::new_with_pose(10, pose.clone());
+        assert!(Arc::ptr_eq(&manager.vehicle_data, &pose));
+    }
+
+    fn fake_source(json: &str) -> SourceFakeStruct {
+        match serde_json::from_str::<SourceSelection>(json).unwrap() {
+            SourceSelection::FakeStream(fake) => fake,
+            other => panic!("not a fake source: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn fake_source_head_defaults_to_upright() {
+        let fake = fake_source(r#"{"FakeStream":{}}"#);
+        assert_eq!(fake.head(), HeadOrientation::Upright);
+        assert_eq!(
+            serde_json::to_string(&SourceSelection::FakeStream(fake)).unwrap(),
+            r#"{"FakeStream":{}}"#
+        );
+    }
+
+    #[test]
+    fn fake_source_head_inverted_option() {
+        let fake = fake_source(r#"{"FakeStream":{"head_inverted":true}}"#);
+        assert_eq!(fake.head(), HeadOrientation::Inverted);
+        let fake = fake_source(r#"{"FakeStream":{"head_inverted":false}}"#);
+        assert_eq!(fake.head(), HeadOrientation::Upright);
+    }
 }

@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Instant;
 
 use mavlink::ardupilotmega::ATTITUDE_DATA;
 use mavlink::ardupilotmega::GLOBAL_POSITION_INT_DATA;
@@ -25,7 +26,14 @@ pub struct VehicleData {
     pub lat: f64,
     #[schemars(description = "Longitude in decimal degrees")]
     pub lon: f64,
+    /// When the ATTITUDE that `roll`, `pitch` and `yaw` came from arrived. The pose is
+    /// rewritten on every GLOBAL_POSITION_INT/VFR_HUD too, so this is what dates the yaw.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub attitude_received_at: Option<Instant>,
 }
+
+pub type SharedVehicleData = Arc<RwLock<Option<VehicleData>>>;
 
 #[derive(Deserialize)]
 struct Envelope<T> {
@@ -108,6 +116,7 @@ pub async fn zenoh_client_bridge(latest_pose: Arc<RwLock<Option<VehicleData>>>) 
         info!("Subscribed to mavlink/**/1/ATTITUDE, mavlink/**/1/GLOBAL_POSITION_INT and mavlink/**/1/VFR_HUD");
 
         let mut latest_attitude: Option<ATTITUDE_DATA> = None;
+        let mut latest_attitude_at: Option<Instant> = None;
         let mut latest_position: Option<GLOBAL_POSITION_INT_DATA> = None;
         let mut latest_heading: Option<f32> = None;
 
@@ -118,6 +127,7 @@ pub async fn zenoh_client_bridge(latest_pose: Arc<RwLock<Option<VehicleData>>>) 
                         Ok(sample) => {
                             if let Ok(env) = serde_json5::from_slice::<Envelope<ATTITUDE_DATA>>(&sample.payload().to_bytes()) {
                                 latest_attitude = Some(env.message);
+                                latest_attitude_at = Some(Instant::now());
                             }
                         },
                         Err(error) => {
@@ -163,6 +173,7 @@ pub async fn zenoh_client_bridge(latest_pose: Arc<RwLock<Option<VehicleData>>>) 
                     alt: pos.alt as f64 / 1000.0,
                     lat: pos.lat as f64 / 1e7,
                     lon: pos.lon as f64 / 1e7,
+                    attitude_received_at: latest_attitude_at,
                 };
                 let mut pose_guard = latest_pose.write().await;
                 *pose_guard = Some(pose);
@@ -173,5 +184,28 @@ pub async fn zenoh_client_bridge(latest_pose: Arc<RwLock<Option<VehicleData>>>) 
             reconnect_delay_secs,
             "Zenoh client bridge disconnected, retrying"
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn attitude_envelope_with_type_field_parses() {
+        let payload = br#"{
+            "message": {
+                "pitch": 0.008952283300459385,
+                "pitchspeed": 0.00014409935101866722,
+                "roll": -1.5255012512207031,
+                "rollspeed": -0.00015358044765889645,
+                "time_boot_ms": 1074822100,
+                "type": "ATTITUDE",
+                "yaw": -0.40520748496055603,
+                "yawspeed": 0.0005934527143836021
+            }
+        }"#;
+        let env = serde_json5::from_slice::<Envelope<ATTITUDE_DATA>>(payload).unwrap();
+        assert!((env.message.yaw - -0.40520748).abs() < 1e-6);
     }
 }
