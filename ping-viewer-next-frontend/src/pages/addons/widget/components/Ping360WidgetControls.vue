@@ -60,6 +60,21 @@
           </v-btn>
         </div>
 
+        <div v-if="mapAvailable" class="control-pill">
+          <v-btn class="pill-btn" icon variant="text" size="small" :aria-label="mapToggleLabel"
+            @click="emitAction('toggle_map')">
+            <v-icon size="18">{{ mapDrawing ? 'mdi-map-marker-radius' : 'mdi-map-marker-off' }}</v-icon>
+          </v-btn>
+          <span class="pill-content">
+            <span class="pill-label">Map</span>
+            <span class="pill-value">{{ mapLabel }}</span>
+          </span>
+          <v-btn class="pill-btn" icon variant="text" size="small"
+            aria-label="Clear map" @click="emitAction('clear_map')">
+            <v-icon size="18">mdi-eraser</v-icon>
+          </v-btn>
+        </div>
+
         <v-btn
           class="rec-pill"
           :class="{ 'is-recording': isRecording }"
@@ -106,6 +121,18 @@ const props = defineProps({
     type: Number,
     default: null,
   },
+  mapAvailable: {
+    type: Boolean,
+    default: false,
+  },
+  mapEnabled: {
+    type: Boolean,
+    default: false,
+  },
+  mapStatus: {
+    type: Object,
+    default: null,
+  },
 });
 
 const emit = defineEmits(['button-click']);
@@ -124,6 +151,19 @@ const gainLabel = computed(
 );
 
 const sectorLabel = computed(() => (props.sector == null ? '--' : `${props.sector}°`));
+
+const mapReady = computed(() => props.mapStatus?.state === 'ready');
+const mapDrawing = computed(() => mapReady.value && props.mapEnabled);
+
+const mapLabel = computed(() => {
+  if (mapReady.value) return props.mapEnabled ? 'On' : 'Off';
+  return props.mapStatus?.message || '--';
+});
+
+const mapToggleLabel = computed(() => {
+  if (!mapReady.value) return 'Retry drawing on the map';
+  return props.mapEnabled ? 'Stop drawing on the map' : 'Draw on the map';
+});
 
 const emitAction = (action, value) => {
   emit('button-click', { action, value, id: action });
