@@ -7,6 +7,7 @@ import {
   UNKNOWN_HDG,
   YAW_STALE_MS,
   ping360MapPalette,
+  ping360MeshId,
   ping360MountOffsetGrad,
 } from './ping360MapFeed';
 import {
@@ -75,6 +76,12 @@ afterEach(() => {
 });
 
 describe('Ping360MapFeed', () => {
+  it('names its mesh as Cockpit takes mesh ids, for every slot the widget takes', () => {
+    for (let slot = 0; slot <= 255; slot++) {
+      expect(ping360MeshId(slot)).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
+    }
+  });
+
   it.each([
     ['no position', undefined, undefined],
     ['0, 0', 0, 0],
@@ -419,7 +426,7 @@ describe('Ping360MapFeed palette', () => {
     expect(meshPalette(posted)).toEqual(Array.from(mapPaletteFrom(colorPalettes.Heatmap)));
   });
 
-  it('re-sends only the palette when it changes, the mesh and its pings kept', () => {
+  it('re-sends the mesh in the new palette when it changes, its layout and pings kept', () => {
     vi.stubGlobal('localStorage', storage({ customColorPalette: JSON.stringify(CUSTOM) }));
     const posted: MapMeshMessage[] = [];
     const target = scanning(posted, 'Thermal Blue');
@@ -427,6 +434,9 @@ describe('Ping360MapFeed palette', () => {
     vi.advanceTimersByTime(20);
     const before = posted.length;
     const seq = target.sender?.seq;
+    const { palette: _, ...layout } = posted.find(
+      (message) => message.type === 'cockpit:setMapMesh'
+    )?.mesh as Record<string, unknown>;
 
     target.setPalette('Thermal Blue');
     expect(posted).toHaveLength(before);
@@ -436,20 +446,22 @@ describe('Ping360MapFeed palette', () => {
     vi.advanceTimersByTime(1000);
     const after = posted.slice(before);
     expect(after.map((message) => message.type)).toEqual([
-      'cockpit:setMapMeshPalette',
-      'cockpit:setMapMeshPalette',
+      'cockpit:setMapMesh',
+      'cockpit:setMapMesh',
     ]);
-    expect(after[0].id).toBe('ping-viewer-next-ping360-2');
-    expect(Array.from(after[0].palette as Uint8Array)).toEqual(
+    const meshes = after.map((message) => message.mesh as Record<string, unknown>);
+    for (const mesh of meshes) expect(mesh).toMatchObject(layout);
+    expect(Array.from(meshes[0].palette as Uint8Array)).toEqual(
       Array.from(mapPaletteFrom(colorPalettes.Ocean))
     );
-    expect(Array.from(after[1].palette as Uint8Array)).toEqual(Array.from(mapPaletteFrom(CUSTOM)));
+    expect(Array.from(meshes[1].palette as Uint8Array)).toEqual(Array.from(mapPaletteFrom(CUSTOM)));
     expect(target.sender?.seq).toBe(seq);
 
     target.handlePing(3, levels(1200));
     vi.advanceTimersByTime(20);
     expect(posted.at(-1)).toMatchObject({ type: 'cockpit:setMapMeshQuads', first: 3 });
+    const replayed = posted.length;
     target.sender?.replay();
-    expect(meshPalette(posted.slice(before))).toEqual(Array.from(mapPaletteFrom(CUSTOM)));
+    expect(meshPalette(posted.slice(replayed))).toEqual(Array.from(mapPaletteFrom(CUSTOM)));
   });
 });

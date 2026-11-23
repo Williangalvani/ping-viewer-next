@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fixture from './__fixtures__/bluesim.json';
 import {
   MAX_MESSAGE_BYTES,
+  MAX_STRIP_BYTES,
   type MapMeshMessage,
   MapMeshSender,
   PALETTE_BYTES,
@@ -61,6 +62,9 @@ const capabilities = (posted: Posted, meshes: Record<string, unknown>) => ({
     maxQuadsPerMessage: 4096,
     maxMessageBytes: MAX_MESSAGE_BYTES,
     maxTexelSide: 2048,
+    maxStripBytes: MAX_STRIP_BYTES,
+    budgetBytes: 228589568,
+    usedBytes: 0,
     formats: ['r8', 'rgba8'],
     ...meshes,
   },
@@ -278,6 +282,79 @@ describe('MapMeshSender replies', () => {
     expect(posted).toHaveLength(sent);
   });
 
+  it('recolours by setting the mesh again with the same capacity and texels', () => {
+    const posted: Posted[] = [];
+    const sender = mesh(6, posted, true);
+    sender.create();
+    write(sender, 1);
+    sender.flush();
+    const { palette: _, ...layout } = posted[1].message.mesh as Record<string, unknown>;
+    posted.length = 0;
+    sender.setPalette(palette());
+    expect(types(posted)).toEqual(['cockpit:setMapMesh']);
+    const set = posted[0].message;
+    expect(set.requestId).toBeDefined();
+    expect(set.mesh).toMatchObject(layout);
+    expect(Array.from((set.mesh as { palette: Uint8Array }).palette)).toEqual(fixture.palette);
+    sender.handleReply(result(posted[0], { ok: true, head: 1, capacity: 6 }));
+    expect(sender.replays).toBe(0);
+    expect(sender.seq).toBe(1);
+  });
+
+  it('stops on a setMapMesh past the memory budget, warning once with the MiB', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const posted: Posted[] = [];
+    const sender = mesh(6, posted, true);
+    sender.create();
+    sender.handleReply(capabilities(posted[0], {}));
+    sender.handleReply(
+      result(posted[1], {
+        ok: false,
+        error: "Mesh 'test-mesh' needs 14283776 bytes for its full capacity.",
+        code: 'budget',
+        usedBytes: 90 * 1024 * 1024,
+        previousBytes: 0,
+        requestedBytes: 14283776,
+        budgetBytes: 100 * 1024 * 1024,
+      })
+    );
+    sender.handleReply(result(posted[2], { ok: false, error: "No mesh 'test-mesh'." }));
+    const sent = posted.length;
+    write(sender, 1);
+    sender.flush();
+    sender.setPalette(palette());
+    expect(posted).toHaveLength(sent);
+    expect(sender.supported).toBe(false);
+    expect(sender.replays).toBe(0);
+    expect(warn).toHaveBeenCalledTimes(1);
+    const [warning] = warn.mock.calls[0] as string[];
+    expect(warning).toContain('memory limit');
+    expect(warning).toContain('13.6 MiB');
+    expect(warning).toContain('90.0 MiB');
+    expect(warning).toContain('100.0 MiB');
+    warn.mockRestore();
+  });
+
+  it('tags commands with requestIds Cockpit takes: strings of 1 to 256 characters', () => {
+    const posted: Posted[] = [];
+    const sender = mesh(6, posted, true);
+    sender.askQuadResults = true;
+    sender.create();
+    write(sender, 1);
+    sender.flush();
+    sender.setPalette(palette());
+    sender.removeQuads(0, 1);
+    sender.requestCapabilities();
+    sender.clear();
+    sender.remove();
+    expect(posted).toHaveLength(9);
+    for (const { message } of posted) {
+      expect(message.requestId).toMatch(/^test-mesh-\d+$/);
+      expect((message.requestId as string).length).toBeLessThanOrEqual(256);
+    }
+    expect(MAX_STRIP_BYTES).toBe(2 * 1024 * 1024 - 96);
+  });
+
   it('leaves answers to other meshes alone', () => {
     const sender = mesh(6, [], true);
     sender.create();
@@ -290,6 +367,7 @@ describe('MapMeshSender replies', () => {
     ['a newer version', { version: 2 }],
     ['too small a capacity', { maxCapacity: 4 }],
     ['too narrow strips', { maxTexelSide: 2 }],
+    ['too small strips', { maxStripBytes: 2 }],
     ['no r8', { formats: ['rgba8'] }],
   ])('keeps the quads but sends none to a Cockpit with %s', (_, meshes) => {
     const posted: Posted[] = [];

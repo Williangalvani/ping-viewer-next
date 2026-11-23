@@ -112,8 +112,8 @@ export class Ping360MapFeed {
     this.palette = ping360MapPalette(options.palette);
   }
 
-  // Recolours the map with the widget's colour palette `name`: only the palette goes to Cockpit,
-  // the mesh and its pings stay
+  // Recolours the map with the widget's colour palette `name`: the mesh goes to Cockpit again in
+  // it, with the same capacity and texels, so its pings stay
   setPalette(name?: string): void {
     const palette = ping360MapPalette(name);
     if (sameBytes(palette, this.palette)) return;

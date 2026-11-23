@@ -6,8 +6,9 @@
 // Message flow, every message an object with a "type", from the sender to Cockpit:
 //   1. cockpit:setMapMesh {mesh: {id, name, capacity, texels: {format, width, height}, filter,
 //      palette, opacity}} creates the mesh. Sent again with the same capacity and texels it keeps
-//      the quads and only changes name, filter, palette and opacity; with others Cockpit drops the
-//      mesh and makes it afresh.
+//      the quads and only changes name, filter, palette and opacity, which is how a palette is
+//      changed; with others Cockpit drops the mesh and makes it afresh. It is a full definition:
+//      a filter, palette or opacity left out goes back to Cockpit's default.
 //   2. cockpit:clearMapMesh {id} empties every slot: the sender's ring restarted, so must Cockpit's.
 //   3. cockpit:setMapMeshQuads {id, first, corners, uv, texels, tint?} for every batch of quads, at
 //      most 60 a second: corners are 8 float64 per quad (lon, lat of 4 corners in ring order), uv 8
@@ -17,8 +18,8 @@
 //      MAX_MESSAGE_BYTES of arrays, never across the end of the ring. Without first Cockpit writes
 //      after its previous write, wrapping at capacity, but a Cockpit that joins late only converges
 //      on explicit slots, so they are sent unless explicitFirst is false.
-//   4. cockpit:removeMapMeshQuads {id, first, count} empties slots; cockpit:setMapMeshPalette {id,
-//      palette} recolours an r8 mesh; cockpit:removeMapMesh {id} removes the mesh.
+//   4. cockpit:removeMapMeshQuads {id, first, count} empties slots; cockpit:removeMapMesh {id}
+//      removes the mesh.
 //   Cockpit keeps meshes in memory only, so a Cockpit that connects later (or lost the mesh) gets
 //   replay(): steps 1 and 2, then every slot this side wrote, oldest first.
 // The arrays go as typed arrays (Float64Array, Float32Array, Uint8Array) through postMessage with
@@ -29,13 +30,17 @@
 // commands were sent. create() and replay() first send
 //   0. cockpit:getMapCapabilities {requestId}, answered with cockpit:mapCapabilities {requestId,
 //      meshes: {version, drawn, maxCapacity, maxQuadsPerMessage, maxMessageBytes, maxTexelSide,
-//      formats}}: a version other than API_VERSION stops the quads, the limits are followed, and
-//      drawn is false where Cockpit keeps meshes but cannot show them (no WebGL2). No answer means a
-//      Cockpit without meshes, which ignores every one of these commands.
-// A command with a requestId is answered with cockpit:mapMeshResult {requestId, id, ok, error?,
-// capacity?, head?, first?, count?}, capacity and head only while the mesh exists. Every command
-// but the quads, which go many times a second, carries one, and so does one quads message every
-// livenessIntervalMs, so a Cockpit that lost the mesh is noticed and given replay().
+//      maxStripBytes, budgetBytes, usedBytes, formats}}: a version other than API_VERSION stops the
+//      quads, the limits are followed, and drawn is false where Cockpit keeps meshes but cannot
+//      show them (no WebGL2). No answer means a Cockpit without meshes, which ignores every one of
+//      these commands.
+// A command with a requestId (a string of 1 to 256 characters, here `${id}-${n}`) is answered with
+// cockpit:mapMeshResult {requestId, id, ok, error?, capacity?, head?, first?, count?}, capacity
+// and head only while the mesh exists. A setMapMesh whose full capacity would take Cockpit past
+// its map mesh memory limit is refused with code 'budget', usedBytes, previousBytes,
+// requestedBytes and budgetBytes. Every command but the quads, which go many times a second,
+// carries a requestId, and so does one quads message every livenessIntervalMs, so a Cockpit that
+// lost the mesh is noticed and given replay().
 // handleReply() takes both answers.
 
 export const FORMAT_BYTES = { r8: 1, rgba8: 4 } as const;
@@ -48,6 +53,8 @@ export const PALETTE_BYTES = 256 * 4;
 export const CORNER_BYTES = 8 * 8;
 export const UV_BYTES = 8 * 4;
 export const TINT_BYTES = 4;
+// texels of one strip, so that one untinted quad with its corners and uv fits in a message
+export const MAX_STRIP_BYTES = MAX_MESSAGE_BYTES - CORNER_BYTES - UV_BYTES;
 export const API_VERSION = 1;
 export const RESULT_TYPE = 'cockpit:mapMeshResult';
 export const CAPABILITIES_TYPE = 'cockpit:mapCapabilities';
@@ -56,7 +63,6 @@ export const SET_TYPE = 'cockpit:setMapMesh';
 export const CLEAR_TYPE = 'cockpit:clearMapMesh';
 export const REMOVE_TYPE = 'cockpit:removeMapMesh';
 export const REMOVE_QUADS_TYPE = 'cockpit:removeMapMeshQuads';
-export const PALETTE_TYPE = 'cockpit:setMapMeshPalette';
 export const CAPABILITIES_QUERY = 'cockpit:getMapCapabilities';
 // requestIds waiting for an answer, beyond which an old Cockpit that never answers is assumed
 export const MAX_OUTSTANDING = 256;
@@ -79,6 +85,10 @@ export interface MapMeshCapabilities {
   maxQuadsPerMessage?: number;
   maxMessageBytes?: number;
   maxTexelSide?: number;
+  maxStripBytes?: number;
+  // bytes all meshes together can reserve, and reserve now
+  budgetBytes?: number;
+  usedBytes?: number;
   formats?: string[];
 }
 
@@ -87,6 +97,12 @@ export interface MapMeshReply {
   requestId?: unknown;
   ok?: boolean;
   error?: string;
+  // 'budget' for a setMapMesh past Cockpit's map mesh memory limit, with the bytes below
+  code?: string;
+  usedBytes?: number;
+  previousBytes?: number;
+  requestedBytes?: number;
+  budgetBytes?: number;
   capacity?: number;
   head?: number;
   meshes?: MapMeshCapabilities;
@@ -113,6 +129,8 @@ const int = (value: unknown, fallback: number): number => {
 };
 
 const isWhite = (tint: ArrayLike<number>): boolean => WHITE.every((value, k) => tint[k] === value);
+
+const mib = (bytes: number): string => `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
 
 // A typed array of `source`'s numbers by its constructor: Ctor.from() copies a typed array tens of
 // times slower in Chrome, too slow for a 1200 texel quad many times a second
@@ -274,10 +292,11 @@ export class MapMeshSender {
     this.send({ type: REMOVE_TYPE, id: this.id });
   }
 
+  // Recolours the mesh: the same capacity and texels again, so Cockpit keeps the quads
   setPalette(colours: ArrayLike<number>): void {
     if (colours.length !== PALETTE_BYTES) throw new RangeError('A palette has 256 RGBA entries');
     this.palette = Uint8Array.from(colours);
-    this.send({ type: PALETTE_TYPE, id: this.id, palette: this.palette.slice() });
+    if (this.supported) this.send({ type: SET_TYPE, mesh: this.definition() });
   }
 
   // Queues one quad for the next flush: 8 corner numbers lon, lat in ring order, 8 uv numbers and
@@ -412,11 +431,13 @@ export class MapMeshSender {
     if (message.ok) return true;
     this.errors += 1;
     this.lastError = String(message.error ?? '');
-    console.warn(`Cockpit refused ${command} of map mesh ${this.id}: ${this.lastError}`);
+    // what Cockpit refuses after it refused the mesh only follows from that
+    if (!this.supported) return true;
+    console.warn(this.refusal(command, message));
     if (command === SET_TYPE) {
       // replaying would only be refused again
       this.supported = false;
-    } else if (this.supported && command !== REMOVE_TYPE && !('capacity' in message)) {
+    } else if (command !== REMOVE_TYPE && !('capacity' in message)) {
       // Cockpit has no such mesh: it reloaded, or something removed it
       this.replay();
     }
@@ -495,6 +516,18 @@ export class MapMeshSender {
     this.post?.(message, transferables(message));
   }
 
+  // The warning for Cockpit's refusal `message` of `command`
+  private refusal(command: string, message: MapMeshReply): string {
+    if (command !== SET_TYPE || message.code !== 'budget') {
+      return `Cockpit refused ${command} of map mesh ${this.id}: ${this.lastError}`;
+    }
+    const needed = mib(int(message.requestedBytes, 0));
+    const others = mib(int(message.usedBytes, 0) - int(message.previousBytes, 0));
+    const limit = mib(int(message.budgetBytes, 0));
+    const raise = `Raise "Map mesh memory limit" in Cockpit's General settings.`;
+    return `Cockpit's map mesh memory limit is too small for map mesh ${this.id}: it needs ${needed}, and other meshes reserve ${others} of the ${limit} limit. ${raise}`;
+  }
+
   // What a Cockpit with none of the mesh needs first: whether it takes meshes, then the mesh, empty
   private announce(): void {
     if (this.askCapabilities) this.requestCapabilities();
@@ -527,6 +560,7 @@ export class MapMeshSender {
     const tooBig =
       int(meshes.maxCapacity, this.capacity) < this.capacity ||
       int(meshes.maxTexelSide, MAX_STRIP_SIDE) < Math.max(this.width, this.height) ||
+      int(meshes.maxStripBytes, MAX_STRIP_BYTES) < this.stripBytesValue ||
       !(meshes.formats ?? [this.format]).includes(this.format);
     if (tooBig) {
       console.warn(`Cockpit takes no map mesh like ${this.id}`);
