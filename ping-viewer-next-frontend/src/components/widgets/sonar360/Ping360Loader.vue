@@ -110,7 +110,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['settings-change']);
+const emit = defineEmits(['settings-change', 'ping360-config', 'ping360-data']);
 
 const liveMeasurement = ref(null);
 const liveRawAngle = ref(0);
@@ -232,6 +232,7 @@ const connectWebSocket = () => {
           gain: config.gain_setting,
           sector: sectorWidth.value,
         });
+        emit('ping360-config', config);
 
         return;
       }
@@ -247,6 +248,7 @@ const connectWebSocket = () => {
         data: new Uint8Array(messageData.data),
       };
       liveRawAngle.value = messageData.angle;
+      emit('ping360-data', messageData);
 
       if (props.debug) {
         console.debug('Processed Ping360 data:', messageData);
