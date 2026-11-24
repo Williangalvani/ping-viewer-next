@@ -107,7 +107,12 @@ const isFullCircle = computed(() => {
   return props.startAngle === 0 && props.endAngle === 360;
 });
 
-const effectiveYaw = computed(() => (isFullCircle.value ? props.yawAngle : 0));
+// Ping360.vue mirrors the whole view of a head-down sonar after this turn, which would turn it
+// against the vehicle, so a head-down view turns the other way.
+const effectiveYaw = computed(() => {
+  if (!isFullCircle.value) return 0;
+  return props.headDown ? -props.yawAngle : props.yawAngle;
+});
 
 const angleLines = computed(() => {
   const all = [0, 45, 90, 135, 180, 225, 270, 315];
