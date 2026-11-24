@@ -102,13 +102,16 @@ export default defineComponent({
       };
     };
 
-    // Cockpit exposes the main vehicle's messages under the system/component scoped name, and
-    // duplicates them under the flat legacy name only while "Legacy variable names" is enabled.
+    // Cockpit exposes the main vehicle's messages under the system/component scoped name, as
+    // '/mavlink/1/1/VFR_HUD/heading', with no wildcards, and duplicates them under the flat legacy
+    // name only while "Legacy variable names" is enabled; turned off, those keep their last value.
+    // The flat names are only used until a scoped one arrives, for a Cockpit without them.
     // VFR_HUD heading streams faster than ATTITUDE yaw, which is only used while it is silent.
-    const vfrHudHeadingVariableIds = ['/mavlink/*/1/VFR_HUD/heading', 'VFR_HUD/heading'];
-    const headingVariableIds = ['/mavlink/*/1/ATTITUDE/yaw', 'ATTITUDE/yaw'];
     const VFR_HUD_STALE_MS = 2000;
     let lastVfrHudHeadingAt = 0;
+    let headingSystemId = 1;
+    let scopedHeadingSeen = false;
+    const headingSystems = new Set();
 
     const setHeadingFromVfrHud = (headingDegrees) => {
       if (typeof headingDegrees !== 'number' || !Number.isFinite(headingDegrees)) return;
@@ -120,6 +123,30 @@ export default defineComponent({
       if (typeof yawRadians !== 'number' || !Number.isFinite(yawRadians)) return;
       if (Date.now() - lastVfrHudHeadingAt < VFR_HUD_STALE_MS) return;
       yawAngle.value = (yawRadians * 180) / Math.PI;
+    };
+
+    const listenToHeading = (prefix, accepts) => {
+      listenToDatalakeVariable(
+        `${prefix}VFR_HUD/heading`,
+        (value) => accepts() && setHeadingFromVfrHud(value),
+        10
+      );
+      listenToDatalakeVariable(
+        `${prefix}ATTITUDE/yaw`,
+        (value) => accepts() && setHeadingFromYaw(value),
+        10
+      );
+    };
+
+    // The Cockpit API cannot stop listening, so a vehicle no longer followed is ignored
+    const listenToVehicleHeading = (systemId) => {
+      if (headingSystems.has(systemId)) return;
+      headingSystems.add(systemId);
+      listenToHeading(`/mavlink/${systemId}/1/`, () => {
+        if (systemId !== headingSystemId) return false;
+        scopedHeadingSeen = true;
+        return true;
+      });
     };
 
     const widgetType = computed(() => route.params.type?.toLowerCase());
@@ -845,12 +872,18 @@ export default defineComponent({
       }
 
       if (widgetType.value === 'ping360') {
-        for (const variableId of vfrHudHeadingVariableIds) {
-          listenToDatalakeVariable(variableId, setHeadingFromVfrHud, 10);
-        }
-        for (const variableId of headingVariableIds) {
-          listenToDatalakeVariable(variableId, setHeadingFromYaw, 10);
-        }
+        listenToHeading('', () => !scopedHeadingSeen);
+        listenToVehicleHeading(headingSystemId);
+        listenToDatalakeVariable(
+          'autopilotSystemId',
+          (value) => {
+            const id = Number(value);
+            if (!Number.isInteger(id) || id < 1 || id === headingSystemId) return;
+            headingSystemId = id;
+            listenToVehicleHeading(id);
+          },
+          1
+        );
       }
 
       await pollSlot();
