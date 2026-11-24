@@ -5,11 +5,12 @@
 				:numMarkers="numMarkers" :showRadiusLines="showRadiusLines" :showMarkers="showMarkers"
 				:radiusLineColor="radiusLineColor" :markerColor="markerColor"
 				:markerBackgroundColor="markerBackgroundColor" :radiusLineWidth="radiusLineWidth"
-				:startAngle="startAngle" :endAngle="endAngle" :yawAngle="isFrozen ? frozenYaw : yaw_angle"
+				:startAngle="startAngle" :endAngle="endAngle" :plotRotation="-(isFrozen ? frozenTurn : headingTurn)"
 				:headDown="headDown">
 			<Sonar360Shader :measurement="measurement" :measurements="measurements" :is-frozen="isFrozen" :numLines="400"
 				:color-palette="colorPalette" :get-color-from-palette="getColorFromPalette" :startAngle="startAngle"
-				:endAngle="endAngle" :yaw_angle="0" :rotation="rotation" :max-radius="shaderMaxRadius" :debug=false />
+				:endAngle="endAngle" :yaw_angle="0" :lineHeading="headingTurn" :rotation="rotation"
+				:max-radius="shaderMaxRadius" :debug=false />
 			</Sonar360Mask>
 		</div>
 
@@ -123,7 +124,7 @@ const props = defineProps({
 });
 
 const frozenAngle = ref(0);
-const frozenYaw = ref(0);
+const frozenTurn = ref(0);
 const containerRef = ref(null);
 const size = ref(300);
 
@@ -135,6 +136,15 @@ const shaderMaxRadius = computed(() => (50 - props.lineWidth / 2) / 50);
 const sectorWidth = computed(() => {
   const diff = props.endAngle - props.startAngle;
   return diff >= 0 ? diff : diff + 360;
+});
+
+// As in Ping Viewer, a full circle is drawn with each line at its bearing from north at the time
+// of its ping, then turned back by the current heading: the bow stays up, and older lines keep
+// their bearing while the vehicle turns. The container is mirrored for a head-down sonar, which
+// reverses both turns. A sector stays in the sonar frame.
+const headingTurn = computed(() => {
+  if (props.startAngle !== 0 || props.endAngle !== 360) return 0;
+  return props.headDown ? -props.yaw_angle : props.yaw_angle;
 });
 
 const isHalfCircleView = computed(() => {
@@ -265,7 +275,7 @@ watch(
   (frozen) => {
     if (frozen) {
       frozenAngle.value = props.angle;
-      frozenYaw.value = props.yaw_angle;
+      frozenTurn.value = headingTurn.value;
     }
   }
 );

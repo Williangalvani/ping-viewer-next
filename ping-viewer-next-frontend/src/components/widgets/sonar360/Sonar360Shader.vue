@@ -24,6 +24,8 @@ const props = withDefaults(
     startAngle: number;
     endAngle: number;
     yaw_angle: number;
+    // Degrees added to each line's angle as it is written, so a line keeps the heading of its ping
+    lineHeading?: number;
     rotation?: number;
     // Maximum data radius in normalized 0..1 units. Should match
     // `Sonar360Mask`'s `maxRadius / 50` so the rendered data ends exactly at
@@ -38,6 +40,7 @@ const props = withDefaults(
     startAngle: 0,
     endAngle: 360,
     yaw_angle: 0,
+    lineHeading: 0,
     rotation: 0,
     maxRadius: 0.99,
     isFrozen: false,
@@ -78,8 +81,8 @@ const fsSource = `
   void main(void) {
     vec2 polar = vTextureCoord;
     float angle = atan(polar.y - 0.5, polar.x - 0.5) + 3.14159/2.0;
-    // The plot stays in the sonar frame. Sonar360Mask rotates the canvas for heading,
-    // so uYawAngle is normally 0 and compass changes do not redraw this texture.
+    // Lines are written turned by lineHeading and Sonar360Mask turns the canvas back by the
+    // current heading, so uYawAngle is normally 0 and compass changes do not redraw this texture.
     float angleDegrees = mod(degrees(angle) - uYawAngle, 360.0);
     float radius = length(polar - 0.5) * 2.0;
 
@@ -286,7 +289,8 @@ const writeLine = (angle: number, newData: Uint8Array) => {
     resizeTextureBuffers(newData.length);
   }
 
-  const lineIndex = angle % props.numLines;
+  const headingLines = Math.round((props.lineHeading * props.numLines) / 360);
+  const lineIndex = (((angle + headingLines) % props.numLines) + props.numLines) % props.numLines;
   const textureStart = lineIndex * currentLineLength * 4;
 
   for (let i = 0; i < newData.length; i++) {

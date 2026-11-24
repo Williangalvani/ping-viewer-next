@@ -1,6 +1,6 @@
 <template>
 	<div @mouseleave="onMouseLeave" @mousemove="onMouseMove" class="relative w-full h-full overflow-visible">
-		<div class="absolute inset-0 pointer-events-none" :style="{ transform: `rotate(${effectiveYaw}deg)`, transformOrigin: 'center' }">
+		<div class="absolute inset-0 pointer-events-none" :style="{ transform: `rotate(${plotRotation}deg)`, transformOrigin: 'center' }">
 			<slot></slot>
 		</div>
 
@@ -17,10 +17,10 @@
 			</defs>
 
 			<!--
-				Everything drawn here is fixed to the sonar head, so it takes the same heading
-				offset the shader applies to the data. The depth labels below stay upright.
+				Everything drawn here is fixed to the sonar head, so it does not take the data's
+				heading turn: the sweep stays where the head points now. The depth labels below stay upright.
 			-->
-			<g :transform="`rotate(${effectiveYaw} 50 50)`">
+			<g>
 				<path v-if="!isFullCircle" :d="sectorPath" fill="none" :stroke="radiusLineColor"
 					:stroke-width="radiusLineWidth" vector-effect="non-scaling-stroke" />
 
@@ -99,15 +99,14 @@ const props = defineProps<{
   startAngle: number;
   endAngle: number;
   markerBackgroundColor: string;
-  yawAngle: number;
+  // Clockwise turn of the data in the slot, in degrees
+  plotRotation: number;
   headDown: boolean;
 }>();
 
 const isFullCircle = computed(() => {
   return props.startAngle === 0 && props.endAngle === 360;
 });
-
-const effectiveYaw = computed(() => (isFullCircle.value ? props.yawAngle : 0));
 
 const angleLines = computed(() => {
   const all = [0, 45, 90, 135, 180, 225, 270, 315];
